@@ -1,0 +1,10 @@
+# Pins which image the production app runs.
+#
+# Defaults to app-api:prod - the image name used when the stack is built on the
+# server itself - so `docker compose up -d` by hand keeps working with no extra
+# environment. Set APP_IMAGE in .env to match your own tag, and note that
+# scripts/deploy.sh overrides it with an immutable ghcr.io/...:sha-<short-sha>
+# tag when CI releases.
+services:
+  app:
+    image: ${APP_IMAGE:-app-api:prod}

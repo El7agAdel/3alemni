@@ -1,0 +1,25 @@
+model Upload {
+    id String @id @default(uuid(7))
+
+    key     String @unique
+    purpose String
+
+    uploadableId String?
+
+    driver String
+    bucket String?
+
+    originalName String
+    mimeType     String
+    size         Int
+
+    uploadedBy String
+
+    createdAt DateTime @default(now())
+
+    @@index([purpose])
+    @@index([purpose, uploadableId])
+    @@index([uploadedBy])
+    @@index([createdAt])
+    @@map("uploads")
+}

@@ -1,0 +1,57 @@
+{{#if recipientName}}
+  <p style="margin: 0 0 16px; color: #1a1a1a;">Hi {{recipientName}},</p>
+{{else}}
+  <p style="margin: 0 0 16px; color: #1a1a1a;">Hi,</p>
+{{/if}}
+
+<h2
+  style="margin: 0 0 8px; font-size: 20px; font-weight: 600; color: #1a1a1a;"
+>Account Deletion Scheduled</h2>
+
+<p style="margin: 0 0 16px; color: #4b5563;">
+  Your {{appName}} account has been scheduled for permanent deletion on
+  <strong>{{scheduledDate}}</strong>.
+</p>
+
+<table
+  role="presentation"
+  cellspacing="0"
+  cellpadding="0"
+  border="0"
+  width="100%"
+>
+  <tr>
+    <td
+      style="padding: 16px; background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px;"
+    >
+      <p style="margin: 0; color: #92400e; font-size: 14px;">
+        <strong>You have {{gracePeriodDays}} days to change your mind.</strong>
+        Simply log in to your account before the scheduled date and your account
+        will be fully restored.
+      </p>
+    </td>
+  </tr>
+</table>
+
+<p style="margin: 24px 0 8px; color: #4b5563;">After deletion:</p>
+<table
+  role="presentation"
+  cellspacing="0"
+  cellpadding="0"
+  border="0"
+  width="100%"
+>
+  <tr>
+    <td style="padding: 0 0 4px 16px; color: #4b5563;">&#8226; Your profile and
+      account data will be permanently removed</td>
+  </tr>
+  <tr>
+    <td style="padding: 0 0 0 16px; color: #4b5563;">&#8226; This action cannot
+      be reversed after the grace period</td>
+  </tr>
+</table>
+
+<p style="margin: 24px 0 0; font-size: 13px; color: #9ca3af;">
+  If you didn't request this deletion, log in immediately and change your
+  password.
+</p>

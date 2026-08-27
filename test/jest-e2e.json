@@ -1,0 +1,37 @@
+{
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "..",
+    "testEnvironment": "node",
+    "testRegex": ".e2e-spec.ts$",
+    "transform": {
+        "^.+\\.(t|j)s$": [
+            "ts-jest",
+            {
+                "tsconfig": {
+                    "module": "commonjs",
+                    "moduleResolution": "node10",
+                    "allowJs": true,
+                    "esModuleInterop": true,
+                    "allowSyntheticDefaultImports": true,
+                    "resolvePackageJsonExports": false,
+                    "declaration": false,
+                    "incremental": false
+                }
+            }
+        ]
+    },
+    "moduleNameMapper": {
+        "^(\\.{1,2}/.*)\\.js$": "$1",
+        "^@generated/(.*)$": "<rootDir>/prisma/generated/$1",
+        "^@common/(.*)$": "<rootDir>/src/common/$1",
+        "^@config$": "<rootDir>/src/config",
+        "^@infra/(.*)$": "<rootDir>/src/infrastructure/$1",
+        "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+        "^@shared/(.*)$": "<rootDir>/src/shared/$1",
+        "^@tasks$": "<rootDir>/src/tasks",
+        "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "transformIgnorePatterns": [
+        "node_modules/(?!(?:@borewit/text-codec|@epic-web/invariant|@hapi/tlds|@standard-schema/spec|@tokenizer/inflate|file-type|libphonenumber-js|msgpackr|nanoid|proxy-from-env|strtok3|token-types|uint8array-extras)/)"
+    ]
+}

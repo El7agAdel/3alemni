@@ -1,0 +1,36 @@
+services:
+  app:
+    cpus: "0.70"
+    mem_limit: 400M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.70"
+          memory: 400M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+
+  postgres:
+    cpus: "0.45"
+    mem_limit: 300M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: 300M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+
+  redis:
+    cpus: "0.20"
+    mem_limit: 128M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M

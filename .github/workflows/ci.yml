@@ -1,0 +1,205 @@
+name: CI
+
+# Runs directly on pull requests, and is called by deploy.yml on pushes to main
+# so that production releases pass exactly the same gates as a PR.
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  quality:
+    name: Lint, format & types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Load CI environment
+        run: grep -vE '^#|^$' test/ci.env >> "$GITHUB_ENV"
+
+      - name: Generate an ephemeral ES256 JWT keypair
+        run: |
+          openssl ecparam -genkey -name prime256v1 -noout -out /tmp/jwt.key
+          openssl ec -in /tmp/jwt.key -pubout -out /tmp/jwt.pub
+          {
+            echo "JWT_PRIVATE_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.key
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.pub
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint:ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run typecheck
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Load CI environment
+        run: grep -vE '^#|^$' test/ci.env >> "$GITHUB_ENV"
+
+      - name: Generate an ephemeral ES256 JWT keypair
+        run: |
+          openssl ecparam -genkey -name prime256v1 -noout -out /tmp/jwt.key
+          openssl ec -in /tmp/jwt.key -pubout -out /tmp/jwt.pub
+          {
+            echo "JWT_PRIVATE_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.key
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.pub
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run unit tests
+        run: npm run test:ci
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Load CI environment
+        run: grep -vE '^#|^$' test/ci.env >> "$GITHUB_ENV"
+
+      - name: Generate an ephemeral ES256 JWT keypair
+        run: |
+          openssl ecparam -genkey -name prime256v1 -noout -out /tmp/jwt.key
+          openssl ec -in /tmp/jwt.key -pubout -out /tmp/jwt.pub
+          {
+            echo "JWT_PRIVATE_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.key
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.pub
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npm run db:migrate:deploy
+
+      - name: Run E2E tests
+        run: npm run test:e2e:ci
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Load CI environment
+        run: grep -vE '^#|^$' test/ci.env >> "$GITHUB_ENV"
+
+      - name: Generate an ephemeral ES256 JWT keypair
+        run: |
+          openssl ecparam -genkey -name prime256v1 -noout -out /tmp/jwt.key
+          openssl ec -in /tmp/jwt.key -pubout -out /tmp/jwt.pub
+          {
+            echo "JWT_PRIVATE_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.key
+            echo "__PEM_EOF__"
+            echo "JWT_PUBLIC_KEY<<__PEM_EOF__"
+            cat /tmp/jwt.pub
+            echo "__PEM_EOF__"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output
+        run: test -f dist/src/main.js || (echo "dist/src/main.js missing" && exit 1)

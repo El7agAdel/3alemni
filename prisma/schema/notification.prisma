@@ -1,0 +1,103 @@
+enum DevicePlatform {
+    ANDROID
+    IOS
+    WEB
+}
+
+enum NotificationCategory {
+    TRANSACTIONAL
+    SECURITY
+    ACTIVITY
+    MARKETING
+}
+
+enum NotificationChannelType {
+    EMAIL
+    WHATSAPP
+    PUSH
+}
+
+enum BroadcastStatus {
+    DRAFT
+    SENDING
+    COMPLETED
+    FAILED
+}
+
+model DeviceToken {
+    id String @id @default(uuid(7))
+
+    userId   String
+    deviceId String
+    token    String @unique
+
+    platform   DevicePlatform
+    deviceName String?
+
+    lastSeenAt DateTime @default(now())
+    createdAt  DateTime @default(now())
+
+    @@unique([userId, deviceId])
+    @@index([userId])
+    @@index([lastSeenAt])
+    @@map("device_tokens")
+}
+
+model Notification {
+    id String @id @default(uuid(7))
+
+    userId String
+
+    type  String
+    title String
+    body  String @db.Text
+    icon  String
+    color String
+
+    category NotificationCategory
+
+    targetType String?
+    targetId   String?
+
+    broadcastId String?
+    dedupKey    String? @unique
+
+    readAt    DateTime?
+    createdAt DateTime  @default(now())
+
+    @@index([userId, createdAt(sort: Desc)])
+    @@index([userId, readAt])
+    @@index([targetType, targetId])
+    @@index([broadcastId])
+    @@map("notifications")
+}
+
+model Broadcast {
+    id String @id @default(uuid(7))
+
+    title   String
+    body    String                   @db.Text
+    channel NotificationChannelType
+
+    audience       String
+    audienceParams Json?
+
+    persistAsNotification Boolean @default(false)
+
+    status BroadcastStatus @default(SENDING)
+
+    audienceSize      Int?
+    sentSuccessCount  Int?
+    sentFailureCount  Int?
+
+    createdBy String
+    createdAt DateTime @default(now())
+
+    completedAt   DateTime?
+    failureReason String?
+
+    @@index([createdAt(sort: Desc)])
+    @@index([createdBy])
+    @@index([status])
+    @@map("broadcasts")
+}

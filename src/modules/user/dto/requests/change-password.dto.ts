@@ -1,0 +1,14 @@
+import { ApiProperty } from "@nestjs/swagger";
+import { IsString } from "class-validator";
+
+import { IsPassword } from "@common/decorators/validators";
+
+export class ChangePasswordDto {
+    @ApiProperty({ description: "Current password" })
+    @IsString()
+    currentPassword: string;
+
+    @ApiProperty({ description: "New password" })
+    @IsPassword()
+    newPassword: string;
+}

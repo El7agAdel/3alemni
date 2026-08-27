@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+.claude
+.agents
+.codex
+node_modules
+dist
+coverage
+test
+uploads
+*.log
+*.tsbuildinfo

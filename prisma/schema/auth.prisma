@@ -1,0 +1,103 @@
+enum UserStatus {
+    ACTIVE
+    SUSPENDED
+    PENDING_DELETION
+    DELETED
+}
+
+enum OtpPurpose {
+    SIGNUP
+    TWO_FACTOR
+    PASSWORD_RESET
+    REAUTH
+    CHANGE_EMAIL
+    CHANGE_PHONE
+    VERIFY_EMAIL
+    VERIFY_PHONE
+}
+
+enum OtpChannel {
+    EMAIL
+    WHATSAPP
+}
+
+model User {
+    id String @id @default(uuid())
+
+    username     String  @unique
+    email        String  @unique
+    phone        String  @unique
+    passwordHash String
+    qrCode       String  @unique
+
+    firstName   String?
+    lastName    String?
+    displayName String?
+    avatar      String?
+    language    String  @default("en")
+
+    isNewsletterSubscribed Boolean @default(false)
+
+    status UserStatus @default(ACTIVE)
+
+    isTwoFactorOn Boolean    @default(false)
+    otpChannel    OtpChannel @default(EMAIL)
+
+    emailVerifiedAt DateTime?
+    phoneVerifiedAt DateTime?
+
+    deletionRequestedAt DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    sessions  Session[]
+    userRoles UserRole[]
+
+    @@index([status])
+    @@index([createdAt])
+    @@map("users")
+}
+
+model Session {
+    id String @id @default(uuid())
+
+    userId String
+
+    refreshToken String @unique
+
+    deviceType String?
+    deviceName String?
+    ipAddress  String?
+    userAgent  String?
+
+    lastActiveAt DateTime @default(now())
+    expiresAt    DateTime
+    createdAt    DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@index([expiresAt])
+    @@map("sessions")
+}
+
+model Otp {
+    id String @id @default(uuid())
+
+    identifier String
+    purpose    OtpPurpose
+    channel    OtpChannel
+
+    code String
+
+    attempts Int     @default(0)
+    isUsed   Boolean @default(false)
+
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+
+    @@index([identifier, purpose])
+    @@index([expiresAt])
+    @@map("otps")
+}

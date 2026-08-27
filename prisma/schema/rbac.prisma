@@ -1,0 +1,60 @@
+model Role {
+    id String @id @default(uuid())
+
+    name        String  @unique
+    description String?
+    isSystem    Boolean @default(false)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    rolePermissions RolePermission[]
+    userRoles       UserRole[]
+
+    @@map("roles")
+}
+
+model Permission {
+    id String @id @default(uuid())
+
+    key         String @unique
+    resource    String
+    action      String
+    displayName String
+    description String?
+    group       String
+
+    rolePermissions RolePermission[]
+
+    @@unique([resource, action])
+    @@map("permissions")
+}
+
+model RolePermission {
+    roleId       String
+    permissionId String
+
+    role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+    permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+    @@id([roleId, permissionId])
+    @@map("role_permissions")
+}
+
+model UserRole {
+    id String @id @default(uuid())
+
+    userId String
+    roleId String
+
+    assignedAt DateTime @default(now())
+    assignedBy String
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, roleId])
+    @@index([userId])
+    @@index([roleId])
+    @@map("user_roles")
+}
