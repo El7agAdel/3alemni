@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { fileTypeFromBuffer } from "file-type";
 
 import { ErrorCode } from "@common/constants";
+import { UploadDeletedEvent } from "@common/events";
 import { AppExceptions, DomainExceptions } from "@common/exceptions";
-import { ListQueryOptions, PaginatedResult, QueryOptions } from "@common/interfaces";
+import { AuthenticatedUser, ListQueryOptions, PaginatedResult, QueryOptions } from "@common/interfaces";
 import { QueryBuilderUtil } from "@common/utils";
 import { Upload } from "@generated/client";
 import { LoggingService } from "@infra/logging";
@@ -19,10 +21,23 @@ import { UploadRepository } from "../repositories/upload.repository";
 export class UploadService {
     constructor(
         private readonly logger: LoggingService,
+        private readonly emitter: EventEmitter2,
         private readonly uploadRepo: UploadRepository,
         @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     ) {
         this.logger.setContext(UploadService.name);
+    }
+
+    /**
+     * What each purpose accepts: the allowed types and the size ceiling.
+     */
+    listPurposes(): Record<string, { allowedMimeTypes: readonly string[]; maxSizeBytes: number }> {
+        return Object.fromEntries(
+            Object.entries(UPLOAD_PURPOSE_CONFIG).map(([purpose, config]) => [
+                purpose,
+                { allowedMimeTypes: config.allowedMimeTypes, maxSizeBytes: config.maxSizeBytes },
+            ]),
+        );
     }
 
     /**
@@ -64,6 +79,8 @@ export class UploadService {
      * Checks the file type and size against the specified purpose.
      */
     async upload(file: Express.Multer.File, purpose: UploadPurpose, userId: string): Promise<Upload> {
+        if (!file) throw AppExceptions.badRequest("No file provided");
+
         const purposeConfig = UPLOAD_PURPOSE_CONFIG[purpose];
 
         // Check the real file type from its bytes, not the client-supplied header
@@ -145,7 +162,7 @@ export class UploadService {
      * Delete a file from storage and its database record.
      * Refuses to delete an attached upload - callers must detach first.
      */
-    async delete(id: string): Promise<void> {
+    async delete(actor: AuthenticatedUser, id: string): Promise<void> {
         const upload = await this.findByIdOrFail(id);
 
         if (upload.uploadableId) {
@@ -160,6 +177,11 @@ export class UploadService {
 
         await this.storage.delete(upload.key);
         await this.uploadRepo.delete(id);
+
+        this.emitter.emit(
+            UploadDeletedEvent.eventName,
+            new UploadDeletedEvent(id, upload.key, upload.purpose, actor.id),
+        );
 
         this.logger.info("File deleted", { uploadId: id, key: upload.key });
     }

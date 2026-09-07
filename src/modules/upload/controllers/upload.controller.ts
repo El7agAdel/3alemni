@@ -4,11 +4,9 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 
 import { CurrentUser, ResponseMessage, Serialize } from "@common/decorators";
-import { AppExceptions } from "@common/exceptions";
 import { type AuthenticatedUser } from "@common/interfaces";
 import { ApiEndpoint, ApiPaginatedResponse, ApiSuccessResponse } from "@infra/swagger";
 import { Permissions, RequirePermission } from "@modules/rbac";
-import { AuditActions, AuditService } from "@shared/audit";
 
 import { UPLOAD_PURPOSE_CONFIG } from "../constants";
 import { UploadFileDto, UploadQueryDto } from "../dto/requests";
@@ -19,10 +17,7 @@ import { UploadService } from "../services";
 @ApiBearerAuth()
 @Controller("uploads")
 export class UploadController {
-    constructor(
-        private readonly uploadService: UploadService,
-        private readonly auditService: AuditService,
-    ) {}
+    constructor(private readonly uploadService: UploadService) {}
 
     @Get("purposes")
     @ApiEndpoint({
@@ -32,16 +27,7 @@ export class UploadController {
     @ApiSuccessResponse({ description: "Upload purposes retrieved successfully" })
     @ResponseMessage("Upload purposes retrieved successfully")
     listPurposes() {
-        const purposes: Record<string, object> = {};
-
-        for (const [key, config] of Object.entries(UPLOAD_PURPOSE_CONFIG)) {
-            purposes[key] = {
-                allowedMimeTypes: config.allowedMimeTypes,
-                maxSizeBytes: config.maxSizeBytes,
-            };
-        }
-
-        return purposes;
+        return this.uploadService.listPurposes();
     }
 
     @Get()
@@ -98,13 +84,11 @@ export class UploadController {
         isCreated: true,
     })
     @ResponseMessage("File uploaded successfully")
-    async uploadFile(
+    uploadFile(
         @UploadedFile() file: Express.Multer.File,
         @Body() dto: UploadFileDto,
         @CurrentUser() user: AuthenticatedUser,
     ) {
-        if (!file) throw AppExceptions.badRequest("No file provided");
-
         return this.uploadService.upload(file, dto.purpose, user.id);
     }
 
@@ -116,16 +100,7 @@ export class UploadController {
     })
     @ApiSuccessResponse({ description: "Upload deleted successfully" })
     @ResponseMessage("Upload deleted successfully")
-    async deleteUpload(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-        const upload = await this.uploadService.findByIdOrFail(id);
-
-        await this.uploadService.delete(id);
-
-        await this.auditService.log({
-            actorId: user.id,
-            auditAction: AuditActions.UPLOAD_DELETED,
-            resourceId: id,
-            details: { key: upload.key, purpose: upload.purpose },
-        });
+    deleteUpload(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+        return this.uploadService.delete(user, id);
     }
 }

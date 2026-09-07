@@ -4,12 +4,13 @@ import { UploadUtil } from "@common/utils";
 import { ConfigService } from "@config";
 
 import { UploadController } from "./controllers/upload.controller";
+import { UploadEventHandlers } from "./handlers";
 import { UploadRepository } from "./repositories/upload.repository";
 import { UploadPublicService, UploadService } from "./services";
 
 @Module({
     controllers: [UploadController],
-    providers: [UploadRepository, UploadService, UploadPublicService],
+    providers: [UploadRepository, UploadService, UploadPublicService, ...UploadEventHandlers],
     exports: [UploadPublicService],
 })
 export class UploadModule implements OnModuleInit {
