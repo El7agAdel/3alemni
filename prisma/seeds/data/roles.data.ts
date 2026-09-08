@@ -37,10 +37,40 @@ export const ROLES: RoleSeedData[] = [
         name: "Support",
         description: "Read-only access to users, uploads, and the audit trail.",
         isSystem: false,
+        permissions: [Permissions.User.READ.key, Permissions.Upload.READ.key, Permissions.AuditLog.READ.key],
+    },
+    {
+        name: "Teacher",
+        description: "Owns study groups: schedules sessions, sets material, marks attendance, and bills students.",
+        isSystem: false,
         permissions: [
-            Permissions.User.READ.key,
+            ...group(
+                "study-group",
+                "enrollment",
+                "class-session",
+                "attendance",
+                "study-material",
+                "invoice",
+                "payment",
+            ),
             Permissions.Upload.READ.key,
-            Permissions.AuditLog.READ.key,
+        ],
+    },
+    {
+        name: "Student",
+        description:
+            "Attends study groups: sees their own schedule, material, attendance, and invoices, and submits work.",
+        isSystem: false,
+        permissions: [
+            Permissions.StudyGroup.READ.key,
+            Permissions.Enrollment.READ.key,
+            Permissions.ClassSession.READ.key,
+            Permissions.Attendance.READ.key,
+            Permissions.StudyMaterial.READ.key,
+            Permissions.StudyMaterial.SUBMIT.key,
+            Permissions.Invoice.READ.key,
+            Permissions.Payment.READ.key,
+            Permissions.Upload.READ.key,
         ],
     },
 ];
