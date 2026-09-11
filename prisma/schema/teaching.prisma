@@ -1,0 +1,274 @@
+// Teaching domain: study groups, their schedule, materials, and attendance.
+//
+// A StudyGroup is the aggregate root. It is owned by a User holding the Teacher
+// role and joined by Users holding the Student role through an Enrollment.
+//
+// Schedule and payment rate live on the group; an Enrollment may override the
+// rate for a single student. One-on-one tutoring is simply a group of one.
+//
+// Actor columns (createdBy / updatedBy / deletedBy) hold a User id but are kept
+// as plain strings, matching AuditLog.actorId and Upload.uploadedBy - the actor
+// may be deleted long before the record is.
+
+enum StudyGroupStatus {
+    ACTIVE
+    PAUSED
+    ARCHIVED
+}
+
+enum EnrollmentStatus {
+    ACTIVE
+    PAUSED
+    WITHDRAWN
+}
+
+enum RecurrenceFrequency {
+    ONE_OFF
+    DAILY
+    WEEKLY
+    BIWEEKLY
+    MONTHLY
+}
+
+enum ClassSessionStatus {
+    SCHEDULED
+    HELD
+    CANCELLED
+}
+
+enum AttendanceStatus {
+    PRESENT
+    LATE
+    ABSENT
+    EXCUSED
+}
+
+enum StudyMaterialType {
+    VIDEO
+    WRITTEN_CONTENT
+    QUIZ
+    TEST
+    CHALLENGE
+}
+
+enum StudyMaterialInstanceStatus {
+    ASSIGNED
+    IN_PROGRESS
+    SUBMITTED
+    GRADED
+}
+
+enum PaymentScheduleType {
+    PER_SESSION
+    WEEKLY
+    MONTHLY
+}
+
+enum PaymentMethod {
+    CASH
+    INSTAPAY
+    BANK_TRANSFER
+    CARD
+    OTHER
+}
+
+model StudyGroup {
+    id String @id @default(uuid(7))
+
+    ownerId String
+
+    name        String
+    subject     String?
+    description String?
+
+    status StudyGroupStatus @default(ACTIVE)
+
+    // Recurrence pattern. Concrete occurrences are materialised as ClassSession
+    // rows so that attendance and per-session billing have something to hang off.
+    recurrence         RecurrenceFrequency @default(WEEKLY)
+    recurrenceInterval Int                 @default(1)
+    daysOfWeek         Int[] // 0 = Sunday .. 6 = Saturday
+    startTime          String? // "HH:mm" in the group's timezone
+    durationMinutes    Int?
+    timezone           String              @default("UTC")
+    startsOn           DateTime?           @db.Date
+    endsOn             DateTime?           @db.Date
+
+    // Default billing terms. Enrollment.rate overrides `rate` per student.
+    paymentSchedule PaymentScheduleType @default(PER_SESSION)
+    paymentMethod   PaymentMethod       @default(CASH)
+    rate            Decimal             @db.Decimal(10, 2)
+    currency        String              @default("EGP")
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    owner       User            @relation("StudyGroupOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+    enrollments Enrollment[]
+    sessions    ClassSession[]
+    materials   StudyMaterial[]
+    invoiceLine InvoiceLine[]
+
+    @@index([ownerId])
+    @@index([status])
+    @@index([deletedAt])
+    @@map("study_groups")
+}
+
+model Enrollment {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+    studentId    String
+
+    status EnrollmentStatus @default(ACTIVE)
+
+    // Per-student overrides. Null means "inherit from the group".
+    rate            Decimal?             @db.Decimal(10, 2)
+    paymentSchedule PaymentScheduleType?
+    paymentMethod   PaymentMethod?
+
+    joinedAt DateTime  @default(now())
+    leftAt   DateTime?
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup        StudyGroup              @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    student           User                    @relation("StudentEnrollment", fields: [studentId], references: [id], onDelete: Restrict)
+    attendance        Attendance[]
+    materialInstances StudyMaterialInstance[]
+
+    @@unique([studyGroupId, studentId])
+    @@index([studentId])
+    @@index([status])
+    @@map("enrollments")
+}
+
+model ClassSession {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+
+    startsAt DateTime
+    endsAt   DateTime
+
+    status           ClassSessionStatus @default(SCHEDULED)
+    cancellationNote String?
+    notes            String?            @db.Text
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup   StudyGroup    @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    attendance   Attendance[]
+    invoiceLines InvoiceLine[]
+
+    @@index([studyGroupId, startsAt])
+    @@index([status])
+    @@map("class_sessions")
+}
+
+model Attendance {
+    id String @id @default(uuid(7))
+
+    classSessionId String
+    enrollmentId   String
+
+    status    AttendanceStatus @default(PRESENT)
+    arrivedAt DateTime?
+    note      String?
+
+    createdAt DateTime @default(now())
+    createdBy String?
+    updatedAt DateTime @updatedAt
+    updatedBy String?
+
+    classSession ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+    enrollment   Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+    @@unique([classSessionId, enrollmentId])
+    @@index([enrollmentId])
+    @@map("attendance")
+}
+
+model StudyMaterial {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+
+    name        String
+    type        StudyMaterialType
+    description String?           @db.Text
+
+    // Total score obtainable. Null for material that is not graded (a video, say).
+    // The score a student actually achieved lives on StudyMaterialInstance.
+    maxScore Decimal? @db.Decimal(6, 2)
+
+    // Attachments reuse the polymorphic Upload model:
+    // purpose = "study_material", uploadableId = this id.
+    externalUrl String?
+
+    position    Int       @default(0)
+    dueAt       DateTime?
+    publishedAt DateTime?
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup StudyGroup              @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    instances  StudyMaterialInstance[]
+
+    @@index([studyGroupId, position])
+    @@index([type])
+    @@index([deletedAt])
+    @@map("study_materials")
+}
+
+model StudyMaterialInstance {
+    id String @id @default(uuid(7))
+
+    studyMaterialId String
+    enrollmentId    String
+
+    status StudyMaterialInstanceStatus @default(ASSIGNED)
+
+    // Achieved score, against StudyMaterial.maxScore.
+    // Submissions reuse the polymorphic Upload model:
+    // purpose = "study_material_submission", uploadableId = this id.
+    score    Decimal? @db.Decimal(6, 2)
+    feedback String?  @db.Text
+
+    startedAt   DateTime?
+    submittedAt DateTime?
+    gradedAt    DateTime?
+    gradedBy    String?
+
+    createdAt DateTime @default(now())
+    createdBy String?
+    updatedAt DateTime @updatedAt
+    updatedBy String?
+
+    studyMaterial StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+    enrollment    Enrollment    @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+    @@unique([studyMaterialId, enrollmentId])
+    @@index([enrollmentId, status])
+    @@map("study_material_instances")
+}

@@ -1,0 +1,125 @@
+// Billing domain: invoices raised against a student, and payments against them.
+//
+// An Invoice is deliberately not a child of StudyGroup. It belongs to a student
+// and consolidates InvoiceLine rows that may come from several groups or several
+// individual sessions in one billing period - the "consolidation / grouping" the
+// domain model calls for.
+//
+// Money is Decimal(10,2); the currency is carried per invoice rather than being
+// assumed globally.
+
+enum InvoiceStatus {
+    DRAFT
+    ISSUED
+    PARTIALLY_PAID
+    PAID
+    OVERDUE
+    VOID
+}
+
+model Invoice {
+    id String @id @default(uuid(7))
+
+    // Human-facing reference, e.g. "INV-2026-0007".
+    number String @unique
+
+    studentId String
+    issuedBy  String?
+
+    status   InvoiceStatus @default(DRAFT)
+    currency String        @default("EGP")
+
+    // Sum of the lines, then discount/tax applied to reach `total`.
+    subtotal Decimal @default(0) @db.Decimal(10, 2)
+    discount Decimal @default(0) @db.Decimal(10, 2)
+    tax      Decimal @default(0) @db.Decimal(10, 2)
+    total    Decimal @default(0) @db.Decimal(10, 2)
+    paid     Decimal @default(0) @db.Decimal(10, 2)
+
+    // Billing period the consolidated lines cover.
+    periodStart DateTime? @db.Date
+    periodEnd   DateTime? @db.Date
+
+    issuedAt DateTime?
+    dueAt    DateTime?
+    paidAt   DateTime?
+    voidedAt DateTime?
+
+    notes String? @db.Text
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    student  User          @relation("StudentInvoice", fields: [studentId], references: [id], onDelete: Restrict)
+    lines    InvoiceLine[]
+    payments Payment[]
+
+    @@index([studentId, status])
+    @@index([status, dueAt])
+    @@index([periodStart, periodEnd])
+    @@index([deletedAt])
+    @@map("invoices")
+}
+
+model InvoiceLine {
+    id String @id @default(uuid(7))
+
+    invoiceId String
+
+    // What is being charged for. Both are optional so that a line can be a flat
+    // charge, a whole group's period, or one specific session.
+    studyGroupId   String?
+    classSessionId String?
+
+    description String
+    quantity    Decimal @default(1) @db.Decimal(8, 2)
+    unitAmount  Decimal @db.Decimal(10, 2)
+    amount      Decimal @db.Decimal(10, 2)
+
+    periodStart DateTime? @db.Date
+    periodEnd   DateTime? @db.Date
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+    studyGroup   StudyGroup?   @relation(fields: [studyGroupId], references: [id], onDelete: SetNull)
+    classSession ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: SetNull)
+
+    // One session is billed at most once, so a re-run of the invoice generator
+    // cannot double-charge for it.
+    @@unique([invoiceId, classSessionId])
+    @@index([invoiceId])
+    @@index([studyGroupId])
+    @@map("invoice_lines")
+}
+
+model Payment {
+    id String @id @default(uuid(7))
+
+    invoiceId String
+
+    amount   Decimal       @db.Decimal(10, 2)
+    method   PaymentMethod
+    currency String        @default("EGP")
+
+    // InstaPay / transfer reference, cheque number, and so on.
+    reference String?
+    note      String?
+
+    paidAt     DateTime @default(now())
+    recordedBy String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+    @@index([invoiceId])
+    @@index([paidAt])
+    @@map("payments")
+}
