@@ -7,29 +7,27 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_NAME}"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_NAME}
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    command: >-
-      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
-        exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD";
-      else
-        exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction;
-      fi'
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}
+    command: "sh -c 'if [ -n \"$$REDIS_PASSWORD\" ]; then\n  exec redis-server --appendonly yes --maxmemory \"$$REDIS_MAXMEMORY\"\
+      \ --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\";\nelse\n  exec redis-server --appendonly\
+      \ yes --maxmemory \"$$REDIS_MAXMEMORY\" --maxmemory-policy noeviction;\nfi'"
     healthcheck:
       test:
-        [
-          "CMD-SHELL",
-          "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi",
-        ]
+      - CMD-SHELL
+      - if [ -n "$$REDIS_PASSWORD" ]; then redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping; else redis-cli
+        ping; fi
       interval: 10s
       timeout: 5s
       retries: 5

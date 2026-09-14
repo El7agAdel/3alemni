@@ -1,20 +1,23 @@
-name: ${APP_SLUG:-app}-staging
+name: ${APP_SLUG:-3alemni}-staging
 
 services:
   app:
-    container_name: ${APP_SLUG:-app}-staging-app
+    container_name: ${APP_SLUG:-3alemni}-staging-app
     build:
       context: ..
       dockerfile: Dockerfile
       target: production
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${APP_PORT}:3000"
+      - "127.0.0.1:${APP_PORT:-3001}:3000"
     env_file:
-      - ../.env
+      - ../.env.staging
     environment:
       NODE_ENV: staging
+      # The Nest application listens on 3000 inside the container.
+      # APP_PORT from .env.staging controls only the host-side Caddy target.
       APP_PORT: 3000
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=160}
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_URL: postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME}
@@ -39,43 +42,57 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
 
   postgres:
-    container_name: ${APP_SLUG:-app}-staging-postgres
-    ports:
-      - "127.0.0.1:${DATABASE_PORT}:5432"
+    container_name: ${APP_SLUG:-3alemni}-staging-postgres
+    restart: unless-stopped
+    # No host port: only containers on the Compose network can reach PostgreSQL.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - effective_cache_size=96MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - max_connections=30
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
 
   redis:
-    container_name: ${APP_SLUG:-app}-staging-redis
-    ports:
-      - "127.0.0.1:${REDIS_PORT}:6379"
+    container_name: ${APP_SLUG:-3alemni}-staging-redis
+    restart: unless-stopped
+    # No host port: only containers on the Compose network can reach Redis.
+    environment:
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-32mb}
     volumes:
       - redis_data:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
 
 volumes:
   postgres_data:
-    name: ${APP_SLUG:-app}-staging-postgres-data
+    name: ${APP_SLUG:-3alemni}-staging-postgres-data
   redis_data:
-    name: ${APP_SLUG:-app}-staging-redis-data
+    name: ${APP_SLUG:-3alemni}-staging-redis-data
 
 networks:
   default:
-    name: ${APP_SLUG:-app}-staging-network
+    name: ${APP_SLUG:-3alemni}-staging-network

@@ -1,10 +1,15 @@
-# Pins which image the production app runs.
+# Optional runtime-image override.
 #
-# Defaults to app-api:prod - the image name used when the stack is built on the
-# server itself - so `docker compose up -d` by hand keeps working with no extra
-# environment. Set APP_IMAGE in .env to match your own tag, and note that
-# scripts/deploy.sh overrides it with an immutable ghcr.io/...:sha-<short-sha>
-# tag when CI releases.
+# Use this on the resource-constrained staging LXC when APP_IMAGE points to an
+# already-built image (for example an image from GHCR). This avoids compiling
+# the Nest application on the 512 MiB / 2 GiB staging container.
+#
+# Example:
+#   APP_IMAGE=ghcr.io/OWNER/3alemni:staging
+#
+# When this file is included, Compose still sees the build block from the
+# staging override. Run `docker compose pull` followed by `docker compose up -d
+# --no-build` to force use of the prebuilt image.
 services:
   app:
-    image: ${APP_IMAGE:-app-api:prod}
+    image: ${APP_IMAGE:-3alemni-api:staging}

@@ -1,36 +1,40 @@
+# Low-resource override for the current 3alemni staging LXC.
+# The container has about 512 MiB RAM plus host-provided swap, so keep the
+# steady-state container limits conservative. This does NOT constrain BuildKit
+# while building the application image; prefer a prebuilt image if builds OOM.
 services:
   app:
     cpus: "0.70"
-    mem_limit: 400M
+    mem_limit: 256M
     deploy:
       resources:
         limits:
           cpus: "0.70"
-          memory: 400M
+          memory: 256M
         reservations:
           cpus: "0.10"
           memory: 128M
 
   postgres:
-    cpus: "0.45"
-    mem_limit: 300M
-    deploy:
-      resources:
-        limits:
-          cpus: "0.45"
-          memory: 300M
-        reservations:
-          cpus: "0.10"
-          memory: 128M
-
-  redis:
-    cpus: "0.20"
+    cpus: "0.35"
     mem_limit: 128M
     deploy:
       resources:
         limits:
-          cpus: "0.20"
+          cpus: "0.35"
           memory: 128M
         reservations:
           cpus: "0.05"
-          memory: 32M
+          memory: 64M
+
+  redis:
+    cpus: "0.15"
+    mem_limit: 48M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 48M
+        reservations:
+          cpus: "0.02"
+          memory: 24M

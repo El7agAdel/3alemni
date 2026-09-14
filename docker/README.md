@@ -1,78 +1,249 @@
-# Docker setup
+# 3alemni Docker setup — staging
 
-All commands below are run from the repository root and combine the shared
-infrastructure file with one environment-specific override.
+This Docker bundle is aligned with the current **3alemni staging server**:
 
-Every project, container, volume, and network name interpolates `${APP_SLUG}` from
-`.env`, so two apps built from this boilerplate can run side by side without
-colliding. Host ports are the conventional defaults and are equally configurable -
-change them when something is already listening:
-
-| Service     | Host port (default) | Container port | Variable        |
-| ----------- | ------------------: | -------------: | --------------- |
-| Application |                3000 |           3000 | `APP_PORT`      |
-| PostgreSQL  |                5432 |           5432 | `DATABASE_PORT` |
-| Redis       |                6379 |           6379 | `REDIS_PORT`    |
-
-## Development infrastructure
-
-Run PostgreSQL and Redis in Docker while running the Nest application locally:
-
-```sh
-docker compose \
-  --env-file .env \
-  -f docker/docker-compose.yml \
-  -f docker/docker-compose.dev.yml \
-  up -d
-
-npm run db:migrate:dev
-npm run start:dev
+```text
+Virtualization: Proxmox LXC
+Guest OS:       Debian 13 (Trixie)
+Guest hostname: 3lemni-staging
+Application:    3alemni
+App directory:  /var/www/3alemni-api
+SSH entry:      ssh Adel@botros-wol.duckdns.org
+Caddy target:   127.0.0.1:3001
+RAM:            ~512 MiB + host-provided swap
+Root disk:      2 GiB (very constrained)
 ```
 
-## Staging
+The Compose files remain reusable, but the staging override is intentionally
+conservative because this LXC is much smaller than a normal production server.
+
+## Files
+
+- `docker-compose.yml` — shared PostgreSQL + Redis definitions.
+- `docker-compose.dev.yml` — development ports/volumes.
+- `docker-compose.staging.yml` — 3alemni staging app, internal DB/Redis, localhost-only API.
+- `docker-compose.1vcpu.yml` — low-memory limits for the current 512 MiB LXC.
+- `docker-compose.prod.yml` — generic production override; intentionally not reduced to staging limits.
+- `docker-compose.runtime.yml` — optional prebuilt-image override.
+- `entrypoint.sh` — migrations, idempotent seed, then application startup.
+
+## Staging environment file
+
+Create the runtime environment at the repository root:
+
+```sh
+cd /var/www/3alemni-api
+cp 3alemni.env.staging.example .env.staging
+chmod 600 .env.staging
+nano .env.staging
+```
+
+At minimum replace every `[PLACEHOLDER]` value before starting the stack.
+
+Important staging values include:
+
+```env
+APP_NAME=3alemni
+APP_SLUG=3alemni
+NODE_ENV=staging
+APP_PORT=3001
+
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_NAME=3alemni_staging
+DATABASE_USERNAME=3alemni
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_MAXMEMORY=32mb
+```
+
+Inside Docker, PostgreSQL and Redis are addressed by their service names
+`postgres` and `redis`; do not use `localhost` for them.
+
+## Validate the resolved staging config
+
+Run from the repository root:
 
 ```sh
 docker compose \
-  --env-file .env \
+  --env-file .env.staging \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  up -d --build
+  -f docker/docker-compose.1vcpu.yml \
+  config
 ```
 
-## Production
+Do this before every first deployment after editing Compose or environment files.
+
+## Build and start staging
+
+> **Warning:** the current LXC has only ~512 MiB RAM and a 2 GiB root disk.
+> A local Node/Nest image build can run out of memory or disk space. If you have
+> a CI-built image, use the prebuilt-image flow below instead.
+
+If you need to build directly on the staging LXC:
 
 ```sh
 docker compose \
-  --env-file .env \
+  --env-file .env.staging \
   -f docker/docker-compose.yml \
-  -f docker/docker-compose.prod.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
   up -d --build
 ```
 
-The staging and production application containers run Prisma migrations and the
-idempotent seed command before starting (`docker/entrypoint.sh`). PostgreSQL and
-Redis are exposed only on `127.0.0.1` in those environments.
+Check immediately afterward:
 
-## The other two files
+```sh
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  ps
 
-`docker-compose.1vcpu.yml` caps the stack at app 400M / postgres 300M / redis 128M so
-it fits a 1 GB single-vCPU box. `scripts/deploy.sh` always includes it and refuses to
-deploy if the resolved config carries no memory limit. Raise or drop it to match your
-own machine.
+free -h
+df -h /
+docker system df
+```
 
-`docker-compose.runtime.yml` pins `image:` to `${APP_IMAGE}`, which is how CI deploys
-an immutable `ghcr.io/...:sha-<short-sha>` tag instead of building on the server.
+## Preferred flow on this small LXC: prebuilt image
 
-## Notes
+Set `APP_IMAGE` in `.env.staging` to an image available from your registry, for example:
 
-- The explicit `--env-file .env` is required because the base Compose file lives in
-  `docker/`, while the environment file lives at the repository root.
-- To stop an environment, use the same `--env-file` and two `-f` arguments followed
-  by `down`. Named database and Redis volumes are preserved unless `down --volumes`
-  is used.
-- Uploads are mounted from `${UPLOADS_PATH}`, which defaults to `../uploads` —
-  relative to the compose project directory, so the repository root locally and the
-  deploy directory on a server. Set it to an absolute path to store them elsewhere.
-- Renaming the app changes `APP_SLUG` and therefore the volume names. Existing data
-  stays in the old volumes; keep `APP_SLUG` pinned to the old value, or migrate the
-  data, when renaming a running deployment.
+```env
+APP_IMAGE=ghcr.io/OWNER/3alemni:staging
+```
+
+Then:
+
+```sh
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  -f docker/docker-compose.runtime.yml \
+  pull app
+
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  -f docker/docker-compose.runtime.yml \
+  up -d --no-build
+```
+
+This avoids compiling the application on the constrained LXC.
+
+## Network exposure
+
+Staging exposes only the API to the host:
+
+```text
+127.0.0.1:3001 -> app:3000
+```
+
+Caddy should reverse proxy to:
+
+```text
+127.0.0.1:3001
+```
+
+PostgreSQL and Redis have **no host ports** in staging. The app reaches them as:
+
+```text
+postgres:5432
+redis:6379
+```
+
+For debugging, use `docker compose exec` rather than publishing database ports.
+
+## Health check
+
+Directly from the LXC:
+
+```sh
+curl --fail http://127.0.0.1:3001/health
+```
+
+The internal container health check calls:
+
+```text
+http://localhost:3000/health
+```
+
+## Logs
+
+```sh
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  logs --tail=100 app
+```
+
+Follow them with:
+
+```sh
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  logs -f app
+```
+
+## Stop staging
+
+Use the exact same file set:
+
+```sh
+docker compose \
+  --env-file .env.staging \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.1vcpu.yml \
+  down
+```
+
+Do **not** use `down -v` unless you intentionally want to delete the staging PostgreSQL and Redis volumes.
+
+## Resource notes
+
+The low-resource override currently caps steady-state containers at approximately:
+
+| Service | Memory limit |
+| --- | ---: |
+| app | 256 MiB |
+| PostgreSQL | 128 MiB |
+| Redis | 48 MiB |
+
+PostgreSQL staging is also tuned to a smaller buffer/cache footprint and Redis
+uses a default `REDIS_MAXMEMORY=32mb` in the staging override.
+
+These values are for the current tiny LXC, not a production recommendation.
+
+## Disk-space warning
+
+The LXC root filesystem is only 2 GiB. Docker packages, image layers, build cache,
+PostgreSQL data, Redis AOF data, uploads, and logs all consume this same filesystem.
+
+Check frequently:
+
+```sh
+df -h /
+docker system df
+```
+
+Safe cleanup of unused build cache:
+
+```sh
+docker builder prune
+```
+
+Do not blindly run `docker volume prune`, because the named PostgreSQL volume
+contains staging data.
