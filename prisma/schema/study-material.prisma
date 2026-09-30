@@ -1,0 +1,86 @@
+// Study material: what the staff of a group hand out (videos, written content,
+// quizzes, tests, challenges), and each student's copy of it.
+
+enum StudyMaterialType {
+    VIDEO
+    WRITTEN_CONTENT
+    QUIZ
+    TEST
+    CHALLENGE
+}
+
+enum StudyMaterialInstanceStatus {
+    ASSIGNED
+    IN_PROGRESS
+    SUBMITTED
+    GRADED
+}
+
+model StudyMaterial {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+
+    name        String
+    type        StudyMaterialType
+    description String?           @db.Text
+
+    // Total score obtainable. Null for material that is not graded (a video, say).
+    // The score a student actually achieved lives on StudyMaterialInstance.
+    maxScore Decimal? @db.Decimal(6, 2)
+
+    // Attachments reuse the polymorphic Upload model:
+    // purpose = "study_material", uploadableId = this id.
+    externalUrl String?
+
+    position    Int       @default(0)
+    dueAt       DateTime?
+    publishedAt DateTime?
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup StudyGroup              @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    instances  StudyMaterialInstance[]
+
+    @@index([studyGroupId, position])
+    @@index([type])
+    @@index([deletedAt])
+    @@map("study_materials")
+}
+
+model StudyMaterialInstance {
+    id String @id @default(uuid(7))
+
+    studyMaterialId String
+    enrollmentId    String
+
+    status StudyMaterialInstanceStatus @default(ASSIGNED)
+
+    // Achieved score, against StudyMaterial.maxScore.
+    // Submissions reuse the polymorphic Upload model:
+    // purpose = "study_material_submission", uploadableId = this id.
+    score    Decimal? @db.Decimal(6, 2)
+    feedback String?  @db.Text
+
+    startedAt   DateTime?
+    submittedAt DateTime?
+    gradedAt    DateTime?
+    gradedBy    String?
+
+    createdAt DateTime @default(now())
+    createdBy String?
+    updatedAt DateTime @updatedAt
+    updatedBy String?
+
+    studyMaterial StudyMaterial @relation(fields: [studyMaterialId], references: [id], onDelete: Cascade)
+    enrollment    Enrollment    @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+    @@unique([studyMaterialId, enrollmentId])
+    @@index([enrollmentId, status])
+    @@map("study_material_instances")
+}

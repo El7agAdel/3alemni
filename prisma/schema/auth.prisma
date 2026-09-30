@@ -55,9 +55,11 @@ model User {
     sessions  Session[]
     userRoles UserRole[]
 
-    ownedStudyGroups StudyGroup[] @relation("StudyGroupOwner")
-    enrollments      Enrollment[] @relation("StudentEnrollment")
-    invoices         Invoice[]    @relation("StudentInvoice")
+    ownedStudyGroups    StudyGroup[]            @relation("StudyGroupOwner")
+    assistedStudyGroups StudyGroupAssistant[]   @relation("StudyGroupAssistant")
+    enrollments         Enrollment[]            @relation("StudentEnrollment")
+    joinRequests        StudyGroupJoinRequest[] @relation("StudentJoinRequest")
+    invoices            Invoice[]               @relation("StudentInvoice")
 
     @@index([status])
     @@index([createdAt])
