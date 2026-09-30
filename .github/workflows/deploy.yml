@@ -1,14 +1,14 @@
-name: Deploy to production
+name: Deploy to staging
 
 on:
-  # Deploys automatically once CI passes on main.
+  # Merging a pull request into main is a push to main: CI runs again on the
+  # merged commit, the image is built on GitHub, and the staging LXC pulls it.
   #
-  # There is no approval gate: required reviewers needs GitHub Pro on a private
-  # repo, and an `environment:` block without it fails OPEN (runs ungated) rather
-  # than blocking. What protects production instead is scripts/deploy.sh - it
-  # refuses to run without all four compose files, aborts if the resolved config
-  # has no memory limit, waits for the health check, and rolls back to the
-  # previously running image if the new one never goes healthy.
+  # There is no approval gate (required reviewers needs GitHub Pro on a private
+  # repo, and an `environment:` block without it fails OPEN). What protects the
+  # server is scripts/deploy.sh - it validates the compose stack, never builds
+  # on the box, waits for the health check, and rolls back to the previously
+  # running image if the new one never goes healthy.
   push:
     branches: [main]
 
@@ -20,21 +20,22 @@ on:
         required: false
         default: ""
       dry_run:
-        description: "Rehearse only: upload files, pull the image, check limits, then STOP without restarting anything."
+        description: "Rehearse only: upload files, pull the image, validate, then STOP without restarting anything."
         type: boolean
         required: false
         default: false
 
-# Never let two production deploys overlap. Queued runs wait rather than cancel,
-# so an approved release is never dropped halfway.
+# Never let two deploys overlap. Queued runs wait rather than cancel, so a
+# release is never dropped halfway.
 concurrency:
-  group: deploy-production
+  group: deploy-staging
   cancel-in-progress: false
 
 jobs:
   # Same gates a pull request has to pass, re-run against the merged commit.
   ci:
     name: CI
+    if: github.event.inputs.image == ''
     uses: ./.github/workflows/ci.yml
 
   image:
@@ -71,10 +72,11 @@ jobs:
         with:
           context: .
           target: production
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ steps.meta.outputs.image }}
-            ${{ steps.meta.outputs.name }}:latest
+            ${{ steps.meta.outputs.name }}:staging
           # Links the GHCR package to this repository, which is what lets the
           # run-scoped GITHUB_TOKEN pull it during the release job.
           labels: |
@@ -85,18 +87,29 @@ jobs:
           provenance: false
 
   deploy:
-    name: Release
+    name: Release to staging
     needs: image
+    # Run when the image was built, or when a manual run skipped the build by
+    # naming an existing image.
+    if: always() && (needs.image.result == 'success' || (needs.image.result == 'skipped' && github.event.inputs.image != ''))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
-    # Kept for the deployment record and the URL link. NOTE: protection rules
-    # (required reviewers) need GitHub Pro on a private repo - see CI-CD.md.
-    # The manual trigger is what actually gates this workflow.
+    # Kept for the deployment record and the URL link only - see CI-CD.md.
     environment:
-      name: production
-      url: ${{ vars.PRODUCTION_URL }}
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    env:
+      SSH_HOST: ${{ vars.SSH_HOST || 'botros-wol.duckdns.org' }}
+      SSH_USER: ${{ vars.SSH_USER || 'Adel' }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/var/www/3alemni' }}
+      # Space-separated, relative to DEPLOY_DIR. Add docker/docker-compose.1vcpu.yml
+      # through the COMPOSE_FILES variable if the LXC is short on RAM.
+      COMPOSE_FILES: ${{ vars.COMPOSE_FILES || 'docker/docker-compose.yml docker/docker-compose.staging.yml docker/docker-compose.runtime.yml' }}
+      IMAGE: ${{ github.event.inputs.image || needs.image.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -106,72 +119,77 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
+          if [ -z "$SSH_PRIVATE_KEY" ] || [ -z "$SSH_KNOWN_HOSTS" ]; then
+            echo "::error::SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS repository secrets are required. See CI-CD.md."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Upload compose files and deploy script
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
-          DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/var/www/app-api' }}
-        run: |
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "mkdir -p '$DEPLOY_DIR/docker'"
+          # One alias so every ssh/scp below shares host, user, port and key.
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port $SSH_PORT
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
 
-          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" \
-            docker/docker-compose.yml \
-            docker/docker-compose.prod.yml \
+      - name: Check server
+        run: |
+          ssh server "docker version --format 'Docker {{.Server.Version}}' && docker compose version && test -f '$DEPLOY_DIR/.env'" \
+            || { echo "::error::Server check failed: need SSH access, Docker + Compose for $SSH_USER, and $DEPLOY_DIR/.env"; exit 1; }
+
+      - name: Upload compose files and deploy script
+        run: |
+          ssh server "mkdir -p '$DEPLOY_DIR/docker'"
+
+          scp docker/docker-compose.yml \
+            docker/docker-compose.staging.yml \
             docker/docker-compose.1vcpu.yml \
             docker/docker-compose.runtime.yml \
-            "$SSH_USER@$SSH_HOST:$DEPLOY_DIR/docker/"
+            "server:$DEPLOY_DIR/docker/"
 
-          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" \
-            scripts/deploy.sh "$SSH_USER@$SSH_HOST:$DEPLOY_DIR/deploy.sh"
-
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "chmod +x '$DEPLOY_DIR/deploy.sh'"
+          scp scripts/deploy.sh "server:$DEPLOY_DIR/deploy.sh"
+          ssh server "chmod +x '$DEPLOY_DIR/deploy.sh'"
 
       - name: Deploy
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
-          DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/var/www/app-api' }}
-          IMAGE: ${{ github.event.inputs.image || needs.image.outputs.image }}
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           # The run-scoped GITHUB_TOKEN is enough to pull this repo's own
           # package, so no long-lived registry credential is stored on the
           # server. Piped over stdin so it never appears in a process list.
-          printf '%s' "$REGISTRY_TOKEN" | ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" \
-            "$SSH_USER@$SSH_HOST" \
+          printf '%s' "$REGISTRY_TOKEN" | ssh server \
             "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin"
 
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "DEPLOY_DIR='$DEPLOY_DIR' DRY_RUN='$DRY_RUN' '$DEPLOY_DIR/deploy.sh' '$IMAGE'"
+          ssh server \
+            "DEPLOY_DIR='$DEPLOY_DIR' COMPOSE_FILES='$COMPOSE_FILES' DRY_RUN='$DRY_RUN' '$DEPLOY_DIR/deploy.sh' '$IMAGE'"
 
       - name: Log out of the registry
         if: always()
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
-        run: |
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "docker logout ghcr.io" || true
+        run: ssh server "docker logout ghcr.io" || true
 
       - name: Summary
         if: success()
         run: |
           {
-            echo "### Production deploy succeeded"
+            echo "### Staging deploy succeeded"
             echo ""
-            echo "- **Image:** \`${{ github.event.inputs.image || needs.image.outputs.image }}\`"
+            echo "- **Server:** \`$SSH_USER@$SSH_HOST:$DEPLOY_DIR\`"
+            echo "- **Image:** \`$IMAGE\`"
             echo "- **Commit:** ${{ github.sha }}"
           } >> "$GITHUB_STEP_SUMMARY"

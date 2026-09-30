@@ -7,10 +7,10 @@ Virtualization: Proxmox LXC
 Guest OS:       Debian 13 (Trixie)
 Guest hostname: 3lemni-staging
 Application:    3alemni
-App directory:  /var/www/3alemni-api
+App directory:  /var/www/3alemni
 SSH entry:      ssh Adel@botros-wol.duckdns.org
 Caddy target:   127.0.0.1:3001
-RAM:            ~512 MiB + host-provided swap
+RAM:            Check with `free -h` (do not infer RAM from swap)
 Root disk:      2 GiB (very constrained)
 ```
 
@@ -22,7 +22,7 @@ conservative because this LXC is much smaller than a normal production server.
 - `docker-compose.yml` — shared PostgreSQL + Redis definitions.
 - `docker-compose.dev.yml` — development ports/volumes.
 - `docker-compose.staging.yml` — 3alemni staging app, internal DB/Redis, localhost-only API.
-- `docker-compose.1vcpu.yml` — low-memory limits for the current 512 MiB LXC.
+- `docker-compose.1vcpu.yml` — low-memory limits for the current staging LXC.
 - `docker-compose.prod.yml` — generic production override; intentionally not reduced to staging limits.
 - `docker-compose.runtime.yml` — optional prebuilt-image override.
 - `entrypoint.sh` — migrations, idempotent seed, then application startup.
@@ -32,10 +32,10 @@ conservative because this LXC is much smaller than a normal production server.
 Create the runtime environment at the repository root:
 
 ```sh
-cd /var/www/3alemni-api
-cp 3alemni.env.staging.example .env.staging
-chmod 600 .env.staging
-nano .env.staging
+cd /var/www/3alemni
+cp .env.example .env
+chmod 600 .env
+nano .env
 ```
 
 At minimum replace every `[PLACEHOLDER]` value before starting the stack.
@@ -67,18 +67,34 @@ Run from the repository root:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   config
 ```
 
 Do this before every first deployment after editing Compose or environment files.
 
+## Optional low-resource override
+
+Do **not** assume the LXC has only 512 MiB RAM just because `swapon --show`
+reports 512 MiB swap. Check actual RAM first:
+
+```sh
+free -h
+```
+
+If RAM is genuinely tight, add this file to any Compose command:
+
+```sh
+-f docker/docker-compose.1vcpu.yml
+```
+
+Otherwise omit it.
+
 ## Build and start staging
 
-> **Warning:** the current LXC has only ~512 MiB RAM and a 2 GiB root disk.
+> **Warning:** the current LXC has a very small 2 GiB root disk.
 > A local Node/Nest image build can run out of memory or disk space. If you have
 > a CI-built image, use the prebuilt-image flow below instead.
 
@@ -86,10 +102,9 @@ If you need to build directly on the staging LXC:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   up -d --build
 ```
 
@@ -97,10 +112,9 @@ Check immediately afterward:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   ps
 
 free -h
@@ -110,7 +124,7 @@ docker system df
 
 ## Preferred flow on this small LXC: prebuilt image
 
-Set `APP_IMAGE` in `.env.staging` to an image available from your registry, for example:
+Set `APP_IMAGE` in `.env` to an image available from your registry, for example:
 
 ```env
 APP_IMAGE=ghcr.io/OWNER/3alemni:staging
@@ -120,18 +134,16 @@ Then:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   -f docker/docker-compose.runtime.yml \
   pull app
 
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   -f docker/docker-compose.runtime.yml \
   up -d --no-build
 ```
@@ -179,10 +191,9 @@ http://localhost:3000/health
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   logs --tail=100 app
 ```
 
@@ -190,10 +201,9 @@ Follow them with:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   logs -f app
 ```
 
@@ -203,10 +213,9 @@ Use the exact same file set:
 
 ```sh
 docker compose \
-  --env-file .env.staging \
+  --env-file .env \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.staging.yml \
-  -f docker/docker-compose.1vcpu.yml \
   down
 ```
 
