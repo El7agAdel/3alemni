@@ -28,6 +28,16 @@ export class GenerateUtil {
     }
 
     /**
+     * Generate a short code people can read out and type, e.g. "K7Q2M9XA".
+     * Leaves out characters that look alike (0/O, 1/I/L).
+     */
+    static shortCode(length = 8): string {
+        const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+        return Array.from({ length }, () => alphabet[crypto.randomInt(alphabet.length)]).join("");
+    }
+
+    /**
      * Generate a unique public/QR identifier.
      */
     static qrCode(): string {

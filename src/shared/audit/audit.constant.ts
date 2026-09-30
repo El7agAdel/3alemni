@@ -42,6 +42,13 @@ export const AuditActions = {
 
     // Broadcast actions
     BROADCAST_SENT: { resource: "broadcast", action: "sent" },
+
+    // Study group actions
+    STUDY_GROUP_DELETED: { resource: "study-group", action: "deleted" },
+    STUDY_GROUP_STUDENT_APPROVED: { resource: "study-group", action: "student_approved" },
+    STUDY_GROUP_STUDENT_REMOVED: { resource: "study-group", action: "student_removed" },
+    STUDY_GROUP_ASSISTANT_ADDED: { resource: "study-group", action: "assistant_added" },
+    STUDY_GROUP_ASSISTANT_REMOVED: { resource: "study-group", action: "assistant_removed" },
 } as const;
 
 export type AuditAction = (typeof AuditActions)[keyof typeof AuditActions];
