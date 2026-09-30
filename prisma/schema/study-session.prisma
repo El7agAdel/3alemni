@@ -1,0 +1,103 @@
+// Study sessions: the dated occurrences of a study group, who attended them, and
+// the requests of students who want to attend one.
+//
+// Attendance and StudySessionAttendRequest both point at an Enrollment rather
+// than a User, so only real students of the group can have them.
+
+enum StudySessionStatus {
+    SCHEDULED
+    HELD
+    CANCELLED
+}
+
+enum AttendanceStatus {
+    PRESENT
+    LATE
+    ABSENT
+    EXCUSED
+}
+
+enum AttendRequestStatus {
+    PENDING
+    APPROVED
+    REJECTED
+    CANCELLED
+}
+
+model StudySession {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+
+    startsAt DateTime
+    endsAt   DateTime
+
+    status           StudySessionStatus @default(SCHEDULED)
+    cancellationNote String?
+    notes            String?            @db.Text
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup     StudyGroup                  @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    attendance     Attendance[]
+    attendRequests StudySessionAttendRequest[]
+    invoiceLines   InvoiceLine[]
+
+    @@index([studyGroupId, startsAt])
+    @@index([status])
+    @@map("study_sessions")
+}
+
+model Attendance {
+    id String @id @default(uuid(7))
+
+    studySessionId String
+    enrollmentId   String
+
+    status    AttendanceStatus @default(PRESENT)
+    arrivedAt DateTime?
+    note      String?
+
+    createdAt DateTime @default(now())
+    createdBy String?
+    updatedAt DateTime @updatedAt
+    updatedBy String?
+
+    studySession StudySession @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
+    enrollment   Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+    @@unique([studySessionId, enrollmentId])
+    @@index([enrollmentId])
+    @@map("attendance")
+}
+
+// A student asking to attend one session. One row per student per session:
+// asking again re-uses the row and sets it back to PENDING.
+model StudySessionAttendRequest {
+    id String @id @default(uuid(7))
+
+    studySessionId String
+    enrollmentId   String
+
+    status  AttendRequestStatus @default(PENDING)
+    message String?
+
+    decidedAt    DateTime?
+    decidedBy    String?
+    decisionNote String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    studySession StudySession @relation(fields: [studySessionId], references: [id], onDelete: Cascade)
+    enrollment   Enrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+    @@unique([studySessionId, enrollmentId])
+    @@index([enrollmentId, status])
+    @@map("study_session_attend_requests")
+}

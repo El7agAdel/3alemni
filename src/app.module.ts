@@ -15,6 +15,7 @@ import { AuditLogModule } from "@modules/audit-log/audit-log.module";
 import { AuthModule } from "@modules/auth/auth.module";
 import { NotificationModule } from "@modules/notification/notification.module";
 import { RbacModule } from "@modules/rbac/rbac.module";
+import { StudyGroupModule } from "@modules/study-group/study-group.module";
 import { UploadModule } from "@modules/upload/upload.module";
 import { UserModule } from "@modules/user/user.module";
 import { AuditModule } from "@shared/audit";
@@ -50,6 +51,7 @@ import { TasksModule } from "@tasks";
         AuthModule,
         AuditLogModule,
         NotificationModule,
+        StudyGroupModule,
     ],
 })
 export class AppModule {}

@@ -1,0 +1,173 @@
+// Study groups: the group itself, its students, its teaching assistants, and the
+// requests of students who want to join.
+//
+// A StudyGroup is owned by a User holding the Teacher role. A student asks to
+// join with the group's join code (StudyGroupJoinRequest); when the owner
+// approves, the student gets an Enrollment. Enrollment only ever holds real
+// students - people who are still waiting live in StudyGroupJoinRequest.
+//
+// Schedule and payment rate live on the group; an Enrollment may override the
+// rate for a single student. One-on-one tutoring is simply a group of one.
+//
+// Actor columns (createdBy / updatedBy / deletedBy / decidedBy) hold a User id but
+// are kept as plain strings, matching AuditLog.actorId and Upload.uploadedBy - the
+// actor may be deleted long before the record is.
+
+enum StudyGroupStatus {
+    ACTIVE
+    PAUSED
+    ARCHIVED
+}
+
+enum EnrollmentStatus {
+    ACTIVE
+    PAUSED
+    WITHDRAWN
+}
+
+enum RecurrenceFrequency {
+    ONE_OFF
+    DAILY
+    WEEKLY
+    BIWEEKLY
+    MONTHLY
+}
+
+enum JoinRequestStatus {
+    PENDING
+    APPROVED
+    REJECTED
+    CANCELLED
+}
+
+model StudyGroup {
+    id String @id @default(uuid(7))
+
+    ownerId String
+
+    name        String
+    subject     String?
+    description String?
+
+    status StudyGroupStatus @default(ACTIVE)
+
+    // Short code the owner shares so students can ask to join, e.g. "K7Q2M9XA".
+    joinCode String @unique
+
+    // Recurrence pattern. Concrete occurrences are materialised as StudySession
+    // rows so that attendance and per-session billing have something to hang off.
+    recurrence         RecurrenceFrequency @default(WEEKLY)
+    recurrenceInterval Int                 @default(1)
+    daysOfWeek         Int[] // 0 = Sunday .. 6 = Saturday
+    startTime          String? // "HH:mm" in the group's timezone
+    durationMinutes    Int?
+    timezone           String              @default("UTC")
+    startsOn           DateTime?           @db.Date
+    endsOn             DateTime?           @db.Date
+
+    // Default billing terms. Enrollment.rate overrides `rate` per student.
+    paymentSchedule PaymentScheduleType @default(PER_SESSION)
+    paymentMethod   PaymentMethod       @default(CASH)
+    rate            Decimal             @db.Decimal(10, 2)
+    currency        String              @default("EGP")
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    owner        User                    @relation("StudyGroupOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+    enrollments  Enrollment[]
+    assistants   StudyGroupAssistant[]
+    joinRequests StudyGroupJoinRequest[]
+    sessions     StudySession[]
+    materials    StudyMaterial[]
+    invoiceLine  InvoiceLine[]
+
+    @@index([ownerId])
+    @@index([status])
+    @@index([deletedAt])
+    @@map("study_groups")
+}
+
+model Enrollment {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+    studentId    String
+
+    status EnrollmentStatus @default(ACTIVE)
+
+    // Per-student overrides. Null means "inherit from the group".
+    rate            Decimal?             @db.Decimal(10, 2)
+    paymentSchedule PaymentScheduleType?
+    paymentMethod   PaymentMethod?
+
+    joinedAt DateTime  @default(now())
+    leftAt   DateTime?
+
+    createdAt DateTime  @default(now())
+    createdBy String?
+    updatedAt DateTime  @updatedAt
+    updatedBy String?
+    deletedAt DateTime?
+    deletedBy String?
+
+    studyGroup        StudyGroup                  @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    student           User                        @relation("StudentEnrollment", fields: [studentId], references: [id], onDelete: Restrict)
+    attendance        Attendance[]
+    attendRequests    StudySessionAttendRequest[]
+    materialInstances StudyMaterialInstance[]
+
+    @@unique([studyGroupId, studentId])
+    @@index([studentId])
+    @@index([status])
+    @@map("enrollments")
+}
+
+// A user who helps the owner run the group (teaching assistant).
+model StudyGroupAssistant {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+    userId       String
+
+    createdAt DateTime @default(now())
+    createdBy String?
+
+    studyGroup StudyGroup @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    user       User       @relation("StudyGroupAssistant", fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([studyGroupId, userId])
+    @@index([userId])
+    @@map("study_group_assistants")
+}
+
+// A student asking to join a group. One row per student per group: asking again
+// re-uses the row and sets it back to PENDING.
+model StudyGroupJoinRequest {
+    id String @id @default(uuid(7))
+
+    studyGroupId String
+    studentId    String
+
+    status  JoinRequestStatus @default(PENDING)
+    message String?
+
+    decidedAt    DateTime?
+    decidedBy    String?
+    decisionNote String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    studyGroup StudyGroup @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+    student    User       @relation("StudentJoinRequest", fields: [studentId], references: [id], onDelete: Cascade)
+
+    @@unique([studyGroupId, studentId])
+    @@index([studyGroupId, status])
+    @@index([studentId])
+    @@map("study_group_join_requests")
+}

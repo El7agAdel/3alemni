@@ -17,6 +17,22 @@ enum InvoiceStatus {
     VOID
 }
 
+// Billing terms. Also used by StudyGroup (the default) and Enrollment (per-student
+// override).
+enum PaymentScheduleType {
+    PER_SESSION
+    WEEKLY
+    MONTHLY
+}
+
+enum PaymentMethod {
+    CASH
+    INSTAPAY
+    BANK_TRANSFER
+    CARD
+    OTHER
+}
+
 model Invoice {
     id String @id @default(uuid(7))
 
@@ -73,7 +89,7 @@ model InvoiceLine {
     // What is being charged for. Both are optional so that a line can be a flat
     // charge, a whole group's period, or one specific session.
     studyGroupId   String?
-    classSessionId String?
+    studySessionId String?
 
     description String
     quantity    Decimal @default(1) @db.Decimal(8, 2)
@@ -88,11 +104,11 @@ model InvoiceLine {
 
     invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
     studyGroup   StudyGroup?   @relation(fields: [studyGroupId], references: [id], onDelete: SetNull)
-    classSession ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: SetNull)
+    studySession StudySession? @relation(fields: [studySessionId], references: [id], onDelete: SetNull)
 
     // One session is billed at most once, so a re-run of the invoice generator
     // cannot double-charge for it.
-    @@unique([invoiceId, classSessionId])
+    @@unique([invoiceId, studySessionId])
     @@index([invoiceId])
     @@index([studyGroupId])
     @@map("invoice_lines")

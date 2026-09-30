@@ -1,6 +1,6 @@
 # CI/CD
 
-Automated testing, linting, building, and deployment for this API.
+Automated testing, linting, building, and deployment for the 3alemni API.
 
 ## How it works
 
@@ -11,80 +11,108 @@ Pull request ──────────► ci.yml
                           ├─ e2e      jest + postgres + redis service containers
                           └─ build    nest build
 
-Push to main ──────────► deploy.yml
-                          ├─ ci       (re-runs every job above)
-                          ├─ image    docker build → push to ghcr.io
-                          └─ deploy   ssh → pull → compose up (4 files) → health check
-                                                        └─ auto-rollback on failure
+Merge to main ─────────► deploy.yml
+                          ├─ ci       (re-runs every job above on the merged commit)
+                          ├─ image    docker build on GitHub → push to ghcr.io
+                          └─ deploy   ssh Adel@botros-wol.duckdns.org
+                                        → upload compose files + deploy.sh
+                                        → docker pull → compose up --no-build
+                                        → health check → auto-rollback on failure
 ```
 
-Deploys happen automatically once CI passes on `main`. There is **no approval gate**:
-required reviewers needs GitHub Pro on a private repo (see step 3), and an
-`environment:` block without it fails open rather than blocking.
+Merging a pull request into `main` is a push to `main`, which triggers the deploy.
+The image is **always built on GitHub**, never on the server: the staging LXC has a
+2 GiB root disk and cannot comfortably compile the Nest app.
 
-What protects the deployment is `scripts/deploy.sh`:
+| Target          | Value                                   |
+| --------------- | --------------------------------------- |
+| Server          | `Adel@botros-wol.duckdns.org` (port 22) |
+| App directory   | `/var/www/3alemni`                      |
+| Compose stack   | `docker-compose.yml` + `docker-compose.staging.yml` + `docker-compose.runtime.yml` |
+| App port        | `127.0.0.1:${APP_PORT:-3001}` (Caddy target) |
+| Images          | `ghcr.io/el7agadel/3alemni:sha-<short-sha>` plus a moving `:staging` |
 
-1. Refuses to run unless all four compose files are present.
-2. Aborts if the resolved config has no memory limit on the app — the check that
-   stops a deploy from OOM-ing a small box.
-3. Waits up to 180s for the container's health check.
-4. Rolls back to the previously running image if it never goes healthy.
+What protects the server is `scripts/deploy.sh`:
 
-To rehearse without restarting anything, run it manually from **Actions → Deploy to
-production → Run workflow** with **dry_run** ticked.
+1. Refuses to run without `.env` or any of the compose files, and validates the
+   resolved config before touching anything.
+2. Frees disk by removing old image tags (keeps only current + previous) before pulling.
+3. Starts with `--no-build`, so a build is never attempted on the LXC.
+4. Waits up to 300s for the container's health check.
+5. Rolls back to the previously running image if it never goes healthy.
 
-Images are tagged `ghcr.io/<owner>/<repo>:sha-<short-sha>` plus a moving `:latest`.
-The server always runs the immutable SHA tag, so what is deployed is always traceable
-to one commit.
-
-Nothing in either workflow hardcodes an app name. The pieces that vary per project —
-deploy directory, host, port, URL — are repository secrets and variables, and the
-container names `deploy.sh` inspects come from `APP_SLUG` in the server's `.env`.
+To rehearse without restarting anything, run **Actions → Deploy to staging → Run
+workflow** with **dry_run** ticked.
 
 ---
 
 ## One-time setup
 
-Assumes a server with a `deploy` user, Docker, a production `.env` in the deploy
-directory, and a reverse proxy for TLS. What's left is wiring GitHub to it.
+### 1. Prepare the server
 
-### 1. SSH key for GitHub Actions
+On `botros-wol.duckdns.org`, `Adel` must be able to run Docker without sudo, and the
+app directory must hold the runtime `.env`:
 
 ```sh
-ssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/app_deploy -N ""
-ssh-copy-id -i ~/.ssh/app_deploy.pub deploy@example.com
-ssh -i ~/.ssh/app_deploy deploy@example.com "docker ps"   # verify
-ssh-keyscan -p 22 example.com                             # for SSH_KNOWN_HOSTS
+ssh Adel@botros-wol.duckdns.org
+sudo usermod -aG docker Adel          # log out and back in afterwards
+docker ps && docker compose version   # both must work without sudo
+
+sudo mkdir -p /var/www/3alemni && sudo chown Adel: /var/www/3alemni
+cd /var/www/3alemni
+nano .env && chmod 600 .env           # based on .env.example; fill every placeholder
 ```
 
-### 2. Repository secrets
+The workflow uploads the compose files and `deploy.sh` itself — no git checkout is
+needed on the server. See [docker/README.md](docker/README.md) for the `.env` contents.
 
-**Settings → Secrets and variables → Actions → Secrets**
+The SSH port (22 by default) must be reachable from the internet, i.e. forwarded on
+the router to the LXC, since GitHub-hosted runners connect from outside your network.
 
-| Secret            | Value                                                 |
-| ----------------- | ----------------------------------------------------- |
-| `SSH_PRIVATE_KEY` | All of `~/.ssh/app_deploy`, including BEGIN/END lines |
-| `SSH_KNOWN_HOSTS` | Full output of `ssh-keyscan`                          |
-| `SSH_HOST`        | `example.com`                                         |
-| `SSH_USER`        | `deploy`                                              |
+### 2. SSH key for GitHub Actions
 
-Optional **Variables**: `DEPLOY_DIR` (default `/var/www/app-api`), `SSH_PORT`
-(default `22`), `PRODUCTION_URL`.
+On your own machine:
+
+```sh
+ssh-keygen -t ed25519 -C "github-actions-3alemni" -f ~/.ssh/3alemni_deploy -N ""
+ssh-copy-id -i ~/.ssh/3alemni_deploy.pub Adel@botros-wol.duckdns.org
+ssh -i ~/.ssh/3alemni_deploy Adel@botros-wol.duckdns.org "docker ps"   # verify
+ssh-keyscan -p 22 botros-wol.duckdns.org                              # for SSH_KNOWN_HOSTS
+```
+
+### 3. Repository secrets
+
+**GitHub → Settings → Secrets and variables → Actions → Secrets**
+
+| Secret            | Value                                                     |
+| ----------------- | --------------------------------------------------------- |
+| `SSH_PRIVATE_KEY` | All of `~/.ssh/3alemni_deploy`, including BEGIN/END lines |
+| `SSH_KNOWN_HOSTS` | Full output of `ssh-keyscan`                              |
+
+Optional **Variables** (defaults shown):
+
+| Variable        | Default                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `SSH_HOST`      | `botros-wol.duckdns.org`                                                                   |
+| `SSH_USER`      | `Adel`                                                                                     |
+| `SSH_PORT`      | `22`                                                                                       |
+| `DEPLOY_DIR`    | `/var/www/3alemni`                                                                         |
+| `COMPOSE_FILES` | `docker/docker-compose.yml docker/docker-compose.staging.yml docker/docker-compose.runtime.yml` |
+| `STAGING_URL`   | _(none — only used for the link on the deployment)_                                        |
+
+If the LXC is short on RAM (`free -h`), set `COMPOSE_FILES` to also include
+`docker/docker-compose.1vcpu.yml` for container memory limits.
 
 `GITHUB_TOKEN` is injected per run — you don't create it. It authenticates both the
 image push and the server's pull, so no long-lived registry credential lives on the
 server.
 
-### 3. About the approval gate
+### 4. About approval gates
 
-GitHub gates environment protection rules — required reviewers, wait timer, branch
-restrictions — behind **Pro, Team, or Enterprise** for private repos. Classic branch
-protection and rulesets carry the same limit.
-
-**This fails open, not closed.** An `environment:` block on a Free private repo does
-not error; the job just runs with no gate. If you need a real gate on a Free plan,
-remove `push: branches: [main]` from `deploy.yml` and rely on the manual
-`workflow_dispatch` trigger, which works on every plan.
+Environment protection rules (required reviewers, branch restrictions) need **Pro,
+Team, or Enterprise** on private repos, and an `environment:` block on a Free plan
+**fails open** — the job runs ungated. If you ever want manual-only deploys, remove
+`push: branches: [main]` from `deploy.yml` and use the `workflow_dispatch` trigger.
 
 ## Day-to-day workflow
 
@@ -94,20 +122,23 @@ git commit -m "feat: add my change"   # husky runs lint-staged + commitlint
 git push -u origin feat/my-change
 ```
 
-CI runs on the PR. Merging to `main` runs CI again and then deploys.
+Open a PR → CI runs. Merge it into `main` → CI runs again, the image is built and
+pushed, and staging is updated automatically.
 
-For a specific image, or to rehearse, use **Actions → Deploy to production → Run
-workflow**: the `image` input deploys an existing build instead of the selected
-commit, and `dry_run` stops before anything restarts.
+To deploy a specific existing image, or to rehearse, use **Actions → Deploy to
+staging → Run workflow**: the `image` input skips CI and the build and deploys that
+image; `dry_run` stops before anything restarts.
 
 ## Rollback
 
-The deploy script rolls back automatically if the new container fails its health
-check. To roll back manually:
+`deploy.sh` rolls back automatically if the new container fails its health check.
+To roll back manually, either re-run an older **Deploy to staging** run from the
+Actions tab, run the workflow with the `image` input set to an older `sha-` tag, or on
+the server:
 
 ```sh
-ssh deploy@example.com
-cd /var/www/app-api
+ssh Adel@botros-wol.duckdns.org
+cd /var/www/3alemni
 
 cat .image        # currently deployed
 cat .image.prev   # previous
@@ -115,14 +146,8 @@ cat .image.prev   # previous
 ./deploy.sh "$(cat .image.prev)"
 ```
 
-You can also deploy any historical build by SHA:
-
-```sh
-./deploy.sh ghcr.io/<owner>/<repo>:sha-abc1234
-```
-
-Manual server-side pulls need registry credentials. Either run the deploy from GitHub
-Actions, or log in once with a personal access token that has `read:packages`:
+Manual server-side pulls of images no longer on the server need registry credentials.
+Log in once with a personal access token that has `read:packages`:
 
 ```sh
 echo YOUR_PAT | docker login ghcr.io -u <username> --password-stdin
@@ -130,70 +155,54 @@ echo YOUR_PAT | docker login ghcr.io -u <username> --password-stdin
 
 ---
 
-## Reverse proxy
-
-The container binds to `127.0.0.1:${APP_PORT}` and is not reachable from the internet
-directly, so a reverse proxy (Caddy, nginx) terminates TLS and forwards `/api/*` and
-`/health/*` to it.
-
-The app calls `app.set("trust proxy", 1)` outside development, so client IPs resolve
-correctly for rate limiting behind one proxy hop. Add a hop, and that number needs to
-change with it.
-
-Serving uploaded files is on you: `useStaticAssets` runs only in development, so in
-production the proxy must map the public `STORAGE_BASE_URL` path to the uploads
-volume — otherwise every generated file URL 404s (or, worse, silently returns your
-SPA's `index.html`).
-
 ## Troubleshooting
 
-**`Permission denied (publickey)`** — the public key isn't in the deploy user's
+**`ssh: connect to host ... timed out`** — port 22 isn't forwarded to the LXC, or the
+DuckDNS record points at a stale IP. Test from outside your LAN (e.g. phone hotspot).
+
+**`Permission denied (publickey)`** — the public key isn't in `Adel`'s
 `~/.ssh/authorized_keys`, or `SSH_PRIVATE_KEY` is missing its `-----BEGIN/END-----`
 lines. Paste the whole file.
 
 **`Host key verification failed`** — `SSH_KNOWN_HOSTS` is empty or stale. Re-run
 `ssh-keyscan` and update the secret.
 
-**Container names not found** — `deploy.sh` derives them from `APP_SLUG` in the
-server's `.env`. If that file has no `APP_SLUG`, it falls back to `app`, which won't
-match containers created with a different slug. Set it, or export `CONTAINER`.
+**`Server check failed`** — `Adel` can't run `docker` without sudo, Compose v2 isn't
+installed, or `/var/www/3alemni/.env` doesn't exist.
 
 **`denied` on `docker pull`** — the GHCR package isn't linked to the repo. Check
 **Packages** on the repo page; the `org.opencontainers.image.source` label set by the
 build should link it on the first successful push.
+
+**`no space left on device`** — check `docker system df` and `df -h /` on the server.
+`docker builder prune -af` reclaims space left by any earlier on-server builds.
 
 **Deploy times out at the health check** — the container starts but `/health` reports
 a dependency down. The script prints the last 100 log lines and rolls back.
 Investigate with:
 
 ```sh
-cd /var/www/app-api
-docker compose --env-file .env -f docker/docker-compose.yml -f docker/docker-compose.prod.yml logs -f app
+cd /var/www/3alemni
+docker compose --env-file .env \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.staging.yml \
+  -f docker/docker-compose.runtime.yml \
+  logs -f app
 ```
 
 **A migration fails** — the container exits during `prisma migrate deploy` in the
-entrypoint, the health check never passes, and the previous release is restored. Note
-that the _database_ is not rolled back: a partially applied migration must be
-resolved by hand with `prisma migrate resolve`.
+entrypoint, the health check never passes, and the previous release is restored. The
+_database_ is not rolled back: a partially applied migration must be resolved by hand
+with `prisma migrate resolve`.
 
 ---
 
 ## Known gaps
 
-Things this boilerplate deliberately leaves for you to decide:
-
-- **No approval gate on deploys.** Required reviewers needs GitHub Pro on a private
-  repo and fails open without it, so a green CI run on `main` goes straight to
-  production. The guards in `deploy.sh` are the safety net, not a human.
-- **No branch protection.** Same plan limit — CI still runs and still shows red,
-  GitHub just won't block a merge for you.
-- **Coverage is slow.** `collectCoverageFrom: ["**/*.(t|j)s"]` instruments the whole
-  codebase. Worth narrowing the glob to exclude `*.module.ts`, `index.ts`, and DTOs.
-- **`lint:ci` fails on errors only.** The codebase is clean at `--max-warnings 0`, so
-  that flag can be added whenever you want it enforced.
-- **The entrypoint re-seeds on every start.** Safe while the seeds are idempotent —
-  keep them that way.
-- **Releases have a few seconds of downtime.** `compose up -d` recreates the single
-  container. Add a second replica behind the proxy if you need zero-downtime.
-- **No database backup before migrations.** Worth a `pg_dump` step in `deploy.sh`
-  before real traffic arrives.
+- **No approval gate on deploys.** A green CI run on `main` goes straight to staging.
+- **No branch protection** on a Free private repo — CI shows red but won't block a merge.
+- **The entrypoint re-seeds on every start.** Safe while the seeds are idempotent.
+- **Releases have a few seconds of downtime.** `compose up -d` recreates the single container.
+- **No database backup before migrations.** Worth a `pg_dump` step in `deploy.sh`.
+- **The image ships dev dependencies** (the Dockerfile copies the full `node_modules`).
+  Pruning them would shrink pulls on the 2 GiB disk.

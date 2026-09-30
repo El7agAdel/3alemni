@@ -63,4 +63,45 @@ export const DomainExceptions = {
             { size, maxAudienceSize },
         );
     },
+
+    studyGroupNotJoinable: (status: string) => {
+        return new BusinessException(
+            ErrorCode.STUDY_GROUP_NOT_JOINABLE,
+            "This study group is not accepting new students",
+            { status },
+        );
+    },
+
+    studyGroupAlreadyMember: (role: string) => {
+        return new BusinessException(
+            ErrorCode.STUDY_GROUP_ALREADY_MEMBER,
+            "The user is already a member of this study group",
+            { role },
+            HttpStatus.CONFLICT,
+        );
+    },
+
+    studyGroupNotAssistant: () => {
+        return new BusinessException(
+            ErrorCode.STUDY_GROUP_NOT_ASSISTANT,
+            "The user is not allowed to be a teaching assistant",
+        );
+    },
+
+    requestAlreadyExists: (status: string) => {
+        return new BusinessException(
+            ErrorCode.REQUEST_ALREADY_EXISTS,
+            "You already have an open request",
+            { status },
+            HttpStatus.CONFLICT,
+        );
+    },
+
+    requestWrongStatus: (action: string, status: string) => {
+        return new BusinessException(
+            ErrorCode.REQUEST_WRONG_STATUS,
+            `A ${status.toLowerCase()} request cannot be ${action}`,
+            { action, status },
+        );
+    },
 };
