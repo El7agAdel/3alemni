@@ -3,8 +3,8 @@ import { Injectable } from "@nestjs/common";
 import { CacheService, CacheTTL } from "@infra/cache";
 import { LoggingService } from "@infra/logging";
 
-import { RbacCacheKeys } from "../constants";
-import { PermissionRepository, UserRoleRepository } from "../repositories";
+import { DEFAULT_SIGNUP_ROLE, RbacCacheKeys } from "../constants";
+import { PermissionRepository, RoleRepository, UserRoleRepository } from "../repositories";
 
 @Injectable()
 export class RbacPublicService {
@@ -12,9 +12,32 @@ export class RbacPublicService {
         private readonly logger: LoggingService,
         private readonly cache: CacheService,
         private readonly permissionRepo: PermissionRepository,
+        private readonly roleRepo: RoleRepository,
         private readonly userRoleRepo: UserRoleRepository,
     ) {
         this.logger.setContext(RbacPublicService.name);
+    }
+
+    /**
+     * Give a newly registered user the default signup role.
+     * A missing role is logged rather than thrown, so signup never fails because of seed data.
+     */
+    async assignDefaultRole(userId: string): Promise<void> {
+        const role = await this.roleRepo.findByName(DEFAULT_SIGNUP_ROLE);
+
+        if (!role) {
+            this.logger.warn("Default signup role not found, user left without a role", {
+                userId,
+                roleName: DEFAULT_SIGNUP_ROLE,
+            });
+
+            return;
+        }
+
+        await this.userRoleRepo.assign(userId, role.id, userId);
+        await this.invalidateUserCache(userId);
+
+        this.logger.info("Default signup role assigned", { userId, roleName: role.name });
     }
 
     /**

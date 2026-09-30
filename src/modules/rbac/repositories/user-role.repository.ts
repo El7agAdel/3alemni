@@ -54,6 +54,13 @@ export class UserRoleRepository {
         return { added: toAdd, removed: toRemove };
     }
 
+    async assign(userId: string, roleId: string, assignedBy: string): Promise<void> {
+        await this.prisma.userRole.createMany({
+            data: [{ userId, roleId, assignedBy }],
+            skipDuplicates: true,
+        });
+    }
+
     async remove(userId: string, roleId: string): Promise<void> {
         await this.prisma.userRole.delete({
             where: { userId_roleId: { userId, roleId } },
