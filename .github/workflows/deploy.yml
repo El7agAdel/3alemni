@@ -132,6 +132,9 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
 
           # One alias so every ssh/scp below shares host, user, port and key.
+          # They also share ONE TCP connection (ControlMaster): a deploy makes
+          # ~8 ssh/scp calls within seconds, and a rate limit on port 22
+          # (e.g. `ufw limit`) refuses the later ones as a connection flood.
           cat > ~/.ssh/config <<EOF
           Host server
             HostName $SSH_HOST
@@ -143,6 +146,9 @@ jobs:
             StrictHostKeyChecking yes
             ServerAliveInterval 30
             ConnectTimeout 20
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%C
+            ControlPersist 10m
           EOF
           chmod 600 ~/.ssh/config
 
