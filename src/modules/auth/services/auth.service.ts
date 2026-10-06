@@ -15,6 +15,7 @@ import { ConfigService } from "@config";
 import { OtpChannel, OtpPurpose, User, UserStatus } from "@generated/client";
 import { CacheService } from "@infra/cache";
 import { LoggingService } from "@infra/logging";
+import { RbacPublicService } from "@modules/rbac";
 import { UserPublicService } from "@modules/user";
 import { OtpService } from "@shared/otp";
 
@@ -57,6 +58,7 @@ export class AuthService {
         private readonly loginProtectionService: LoginProtectionService,
         private readonly otpService: OtpService,
         private readonly userPublicService: UserPublicService,
+        private readonly rbacPublicService: RbacPublicService,
     ) {
         this.logger.setContext(AuthService.name);
 
@@ -193,6 +195,9 @@ export class AuthService {
             emailVerifiedAt: channel === OtpChannel.EMAIL ? new Date() : undefined,
             phoneVerifiedAt: channel === OtpChannel.WHATSAPP ? new Date() : undefined,
         });
+
+        // Before the tokens, so the very first request already carries the role's permissions
+        await this.rbacPublicService.assignDefaultRole(user.id);
 
         const { sessionId, refreshToken } = await this.sessionService.create(user.id, metadata);
         const accessToken = await this.tokenService.generateAccessToken(user, sessionId);

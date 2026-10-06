@@ -1,0 +1,9 @@
+export { AddAssistantDto } from "./add-assistant.dto";
+export { AllStudyGroupsQueryDto } from "./all-study-groups-query.dto";
+export { CreateStudyGroupDto } from "./create-study-group.dto";
+export { DecideRequestDto } from "./decide-request.dto";
+export { GroupStudentQueryDto } from "./group-student-query.dto";
+export { JoinRequestQueryDto } from "./join-request-query.dto";
+export { JoinStudyGroupDto } from "./join-study-group.dto";
+export { StudyGroupQueryDto } from "./study-group-query.dto";
+export { UpdateStudyGroupDto } from "./update-study-group.dto";

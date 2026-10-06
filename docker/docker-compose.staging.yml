@@ -11,11 +11,11 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-3001}:3000"
     env_file:
-      - ../.env.staging
+      - ../.env
     environment:
       NODE_ENV: staging
       # The Nest application listens on 3000 inside the container.
-      # APP_PORT from .env.staging controls only the host-side Caddy target.
+      # APP_PORT from .env controls only the host-side Caddy target.
       APP_PORT: 3000
       NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=160}
       DATABASE_HOST: postgres

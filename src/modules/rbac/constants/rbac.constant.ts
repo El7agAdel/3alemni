@@ -1,6 +1,11 @@
 import { IncludableRelations, SortableFields } from "@common/interfaces";
 import { CacheKey } from "@infra/cache";
 
+/**
+ * Role every new user gets at signup. Must match a seeded role name.
+ */
+export const DEFAULT_SIGNUP_ROLE = "Student";
+
 export const RbacCacheKeys = {
     PERMISSIONS_LIST: "rbac:permissions:list",
 
