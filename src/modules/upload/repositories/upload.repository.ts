@@ -47,6 +47,14 @@ export class UploadRepository {
     async findByOwner(purpose: string, ownerId: string): Promise<Upload[]> {
         return this.prisma.upload.findMany({
             where: { uploadableId: ownerId, purpose },
+            orderBy: { createdAt: "asc" },
+        });
+    }
+
+    async findByOwners(purpose: string, ownerIds: string[]): Promise<Upload[]> {
+        return this.prisma.upload.findMany({
+            where: { uploadableId: { in: ownerIds }, purpose },
+            orderBy: { createdAt: "asc" },
         });
     }
 

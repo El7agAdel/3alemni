@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { ErrorCode } from "@common/constants";
 import { DomainExceptions } from "@common/exceptions";
+import { Upload } from "@generated/client";
 
 import { UploadPurpose } from "../constants";
 import { UploadRepository } from "../repositories/upload.repository";
@@ -30,23 +31,37 @@ export class UploadPublicService {
      * Confirm that a key exists and is for the right purpose.
      */
     async validateKeyForPurpose(key: string, purpose: UploadPurpose): Promise<void> {
-        const upload = await this.uploadRepo.findByKey(key);
+        await this.findForPurpose(key, purpose);
+    }
 
-        if (!upload) {
-            throw DomainExceptions.business(ErrorCode.UPLOAD_KEY_INVALID, "Upload key not found", { key });
-        }
+    /**
+     * Confirm that a key can be attached to an owner: it exists, is for the right purpose,
+     * and is not attached to anything else yet. Stops one owner taking over another owner's file.
+     */
+    async validateAttachable(key: string, purpose: UploadPurpose, ownerId?: string): Promise<void> {
+        const upload = await this.findForPurpose(key, purpose);
 
-        if (upload.purpose !== (purpose as string)) {
-            throw DomainExceptions.business(
-                ErrorCode.UPLOAD_PURPOSE_MISMATCH,
-                "Upload key belongs to a different purpose",
-                {
-                    key,
-                    actual: upload.purpose,
-                    expected: purpose,
-                },
-            );
+        if (upload.uploadableId && upload.uploadableId !== ownerId) {
+            throw DomainExceptions.business(ErrorCode.UPLOAD_ALREADY_ATTACHED, "Upload is already attached elsewhere", {
+                key,
+            });
         }
+    }
+
+    /**
+     * The uploads attached to one owner, oldest first.
+     */
+    async listByOwner(purpose: UploadPurpose, ownerId: string): Promise<Upload[]> {
+        return this.uploadRepo.findByOwner(purpose, ownerId);
+    }
+
+    /**
+     * The uploads attached to several owners in one query, for list pages.
+     */
+    async listByOwners(purpose: UploadPurpose, ownerIds: string[]): Promise<Upload[]> {
+        if (ownerIds.length === 0) return [];
+
+        return this.uploadRepo.findByOwners(purpose, ownerIds);
     }
 
     /**
@@ -98,5 +113,27 @@ export class UploadPublicService {
      */
     async cleanupOrphans(retentionDays: number): Promise<number> {
         return this.uploadService.cleanupOrphans(retentionDays);
+    }
+
+    private async findForPurpose(key: string, purpose: UploadPurpose): Promise<Upload> {
+        const upload = await this.uploadRepo.findByKey(key);
+
+        if (!upload) {
+            throw DomainExceptions.business(ErrorCode.UPLOAD_KEY_INVALID, "Upload key not found", { key });
+        }
+
+        if (upload.purpose !== (purpose as string)) {
+            throw DomainExceptions.business(
+                ErrorCode.UPLOAD_PURPOSE_MISMATCH,
+                "Upload key belongs to a different purpose",
+                {
+                    key,
+                    actual: upload.purpose,
+                    expected: purpose,
+                },
+            );
+        }
+
+        return upload;
     }
 }
