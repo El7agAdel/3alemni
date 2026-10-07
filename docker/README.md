@@ -9,7 +9,7 @@ Guest hostname: 3lemni-staging
 Application:    3alemni
 App directory:  /var/www/3alemni
 SSH entry:      ssh Adel@botros-wol.duckdns.org
-Caddy target:   127.0.0.1:3001
+Proxy target:   192.168.1.127:3001 (Nginx Proxy Manager on another machine)
 RAM:            Check with `free -h` (do not infer RAM from swap)
 Root disk:      2 GiB (very constrained)
 ```
@@ -152,17 +152,30 @@ This avoids compiling the application on the constrained LXC.
 
 ## Network exposure
 
-Staging exposes only the API to the host:
+Staging publishes only the API port. `APP_BIND_ADDRESS` picks the host address
+it is published on (default `127.0.0.1`):
 
 ```text
-127.0.0.1:3001 -> app:3000
+${APP_BIND_ADDRESS:-127.0.0.1}:3001 -> app:3000
 ```
 
-Caddy should reverse proxy to:
+The public reverse proxy for `3almni.duckdns.org` is Nginx Proxy Manager
+(openresty) on another machine on the LAN, not the Caddy on this LXC. It cannot
+reach the LXC's loopback, so the server's `.env` sets the LXC's LAN IP:
+
+```env
+APP_BIND_ADDRESS=192.168.1.127
+```
+
+and the NPM proxy host forwards to:
 
 ```text
-127.0.0.1:3001
+http://192.168.1.127:3001
 ```
+
+Bind to the LAN IP, not `0.0.0.0`: Docker-published ports bypass ufw, so
+`0.0.0.0` would expose the API on every interface of the LXC. If the proxy ever
+runs on this LXC itself, unset `APP_BIND_ADDRESS` and forward to `127.0.0.1:3001`.
 
 PostgreSQL and Redis have **no host ports** in staging. The app reaches them as:
 

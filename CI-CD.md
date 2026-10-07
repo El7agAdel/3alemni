@@ -29,7 +29,7 @@ The image is **always built on GitHub**, never on the server: the staging LXC ha
 | Server          | `Adel@botros-wol.duckdns.org` (port 22) |
 | App directory   | `/var/www/3alemni`                      |
 | Compose stack   | `docker-compose.yml` + `docker-compose.staging.yml` + `docker-compose.runtime.yml` |
-| App port        | `127.0.0.1:${APP_PORT:-3001}` (Caddy target) |
+| App port        | `${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3001}` (reverse-proxy target) |
 | Images          | `ghcr.io/el7agadel/3alemni:sha-<short-sha>` plus a moving `:staging` |
 
 What protects the server is `scripts/deploy.sh`:
@@ -159,6 +159,12 @@ echo YOUR_PAT | docker login ghcr.io -u <username> --password-stdin
 
 **`ssh: connect to host ... timed out`** — port 22 isn't forwarded to the LXC, or the
 DuckDNS record points at a stale IP. Test from outside your LAN (e.g. phone hotspot).
+
+**`ssh: connect to host ... Connection refused` partway through a run** — earlier
+steps reached the server, so something rate-limited the runner. The workflow reuses one
+multiplexed SSH connection to avoid this; if it still happens, check for a limit on
+port 22 (`sudo ufw status | grep LIMIT`, `grep 'UFW LIMIT BLOCK' /var/log/ufw.log`) or
+DoS/flood protection on the router.
 
 **`Permission denied (publickey)`** — the public key isn't in `Adel`'s
 `~/.ssh/authorized_keys`, or `SSH_PRIVATE_KEY` is missing its `-----BEGIN/END-----`
