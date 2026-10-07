@@ -29,8 +29,8 @@ model StudyMaterial {
     // The score a student actually achieved lives on StudyMaterialInstance.
     maxScore Decimal? @db.Decimal(6, 2)
 
-    // Attachments reuse the polymorphic Upload model:
-    // purpose = "study_material", uploadableId = this id.
+    // A link for content that isn't uploaded, e.g. a video. Files reuse the polymorphic
+    // Upload model: purpose = STUDY_MATERIAL, uploadableId = this id.
     externalUrl String?
 
     position    Int       @default(0)

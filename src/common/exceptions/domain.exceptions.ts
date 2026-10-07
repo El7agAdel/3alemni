@@ -81,6 +81,13 @@ export const DomainExceptions = {
         );
     },
 
+    studyGroupArchived: () => {
+        return new BusinessException(
+            ErrorCode.STUDY_GROUP_ARCHIVED,
+            "This study group is archived. Set it back to ACTIVE or PAUSED to change it",
+        );
+    },
+
     studyGroupNotAssistant: () => {
         return new BusinessException(
             ErrorCode.STUDY_GROUP_NOT_ASSISTANT,

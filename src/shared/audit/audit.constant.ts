@@ -49,6 +49,9 @@ export const AuditActions = {
     STUDY_GROUP_STUDENT_REMOVED: { resource: "study-group", action: "student_removed" },
     STUDY_GROUP_ASSISTANT_ADDED: { resource: "study-group", action: "assistant_added" },
     STUDY_GROUP_ASSISTANT_REMOVED: { resource: "study-group", action: "assistant_removed" },
+
+    // Study material actions
+    STUDY_MATERIAL_DELETED: { resource: "study-material", action: "deleted" },
 } as const;
 
 export type AuditAction = (typeof AuditActions)[keyof typeof AuditActions];
